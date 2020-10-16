@@ -2,6 +2,7 @@
 #include "ClosedCube_TCA9548A.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 // ENV2 lib
 #include "Adafruit_Sensor.h"
 #include <Adafruit_BMP280.h>
@@ -21,14 +22,14 @@ float tmp = 0.0;
 float hum = 0.0;
 float pressure = 0.0;
 // WiFi
-const char ssid[] = "######";
-const char passwd[] = "######";
+const char ssid[] = "";
+const char passwd[] = "";
 // Pub/Sub
-const char* mqttHost = "######"; // MQTTのIPかホスト名
+const char* mqttHost = "192.168.1.200"; // MQTTのIPかホスト名
 const int mqttPort = 1883;       // MQTTのポート
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-const char* topic = "topic";     // 送信先のトピック名
+const char* topic = "pub/M5stack";     // 送信先のトピック名
 char* payload;                   // 送信するデータ
 
 uint8_t ncirSensing() {
@@ -106,16 +107,16 @@ void PaHUBinit() {
   }
 }
 
-//void connectWifi() {
-//  WiFi.begin();
-//  Serial.println("WiFi connecting ....");
-//  while (WiFi.connected() != WL_CONNECTED) {
-//    Serial.print(".");
-//    delay(100);
-//  }
-//  Serial.println("connected");
-//  Serial.println(WiFi.localIP());
-//}
+void connectWifi() {
+  WiFi.begin();
+  Serial.println("WiFi connecting ....");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(100);
+  }
+  Serial.println("connected");
+  Serial.println(WiFi.localIP());
+}
 
 void connectMqtt() {
   mqttClient.setServer(mqttHost, mqttPort);
@@ -130,21 +131,7 @@ void connectMqtt() {
   }
 }
 
-
-void setup() {
-  M5.begin();
-  M5.Power.begin();
-  Wire.begin();
-  M5.Lcd.fillScreen(TFT_BLACK);
-  tca9548a.address(PaHub_I2C_ADDRESS);
-  //  connectWiFi();
-  //  connectMqtt();
-  PaHUBinit();
-}
-
-void loop() {
-  M5.update();
-  PaHUB();
+void showLCD() {
   M5.Lcd.setCursor(0, 0);
   M5.Lcd.setTextSize(2);
   M5.Lcd.print("ENV_TEMP=");
@@ -155,4 +142,39 @@ void loop() {
   M5.Lcd.println(pressure);
   M5.Lcd.print("BODY_TEMP=");
   M5.Lcd.println(temperature);
+}
+
+void setup() {
+  M5.begin();
+  M5.Power.begin();
+  Wire.begin();
+  M5.Lcd.fillScreen(TFT_BLACK);
+  tca9548a.address(PaHub_I2C_ADDRESS);
+  connectWifi();
+  connectMqtt();
+  PaHUBinit();
+}
+
+void loop() {
+  M5.update();
+  PaHUB();
+  showLCD();
+  char json[200];
+  const size_t capacity = JSON_OBJECT_SIZE(2);
+  StaticJsonDocument<capacity> doc;
+  doc["env_temperature"] = tmp;
+  doc["body_temperature"] = temperature;
+  serializeJson(doc, json);
+  mqttClient.publish(topic,json);
+  delay(1000);
+  // WiFi
+  if ( WiFi.status() == WL_DISCONNECTED ) {
+    connectWii();
+  }
+  // MQTT
+  if ( ! mqttClient.connected() ) {
+    connectMqtt();
+  }
+  mqttClient.loop();
+
 }
